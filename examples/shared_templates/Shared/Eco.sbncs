@@ -1,0 +1,23 @@
+{{-
+    include "Shared/Utils"
+
+    eco = {}
+
+    with eco
+        # Wraps a value in typeof(). Missing values return the string "null"
+        # unless otherwise specified
+        func typeof(value, defaultValue = "null")
+            ret choose value ("typeof(" + value + ")") defaultValue
+        end
+
+        # Wraps a value in Localizer.DoStr("...")
+        func do_str(value)
+            ret `Localizer.DoStr(` + (string.literal value) + `)`
+        end
+
+        func replace_arrow_value(text, name, value)
+            $regex = name + `\s+=>\s+(.*);`
+            ret text | regex.replace_capture $regex ["" + value]
+        end
+    end
+-}}

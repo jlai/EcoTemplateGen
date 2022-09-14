@@ -1,0 +1,5 @@
+[EcoTemplateGen]
+    # Path to shared templates
+    # This is resolved relative to the project directory
+    SharedTemplatesDir = "../shared_templates"
+    WriteDiffs = true

@@ -1,0 +1,16 @@
+<Project>
+    <PropertyGroup>
+        <Version>0.0.1</Version>
+
+        <PackageOutputPath>./nupkg</PackageOutputPath>
+	    <PackageProjectUrl>https://github.com/jlai/EcoTemplateGen</PackageProjectUrl>
+	    <RepositoryUrl>https://github.com/jlai/EcoTemplateGen.git</RepositoryUrl>
+	    <PackageReadmeFile>README.nuget.md</PackageReadmeFile>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+	    <RepositoryType>git</RepositoryType>
+
+        <Deterministic>true</Deterministic>
+        <DeterministicSourcePaths>true</DeterministicSourcePaths>
+        <PathMap>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))=./</PathMap>
+    </PropertyGroup>
+</Project>

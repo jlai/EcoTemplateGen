@@ -1,0 +1,9 @@
+{{-
+    func choose(value, a, b)
+        if value
+            ret a
+        else
+            ret b
+        end
+    end
+-}}

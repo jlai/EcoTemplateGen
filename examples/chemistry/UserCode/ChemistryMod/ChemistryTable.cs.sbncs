@@ -1,0 +1,19 @@
+{{-
+    BaseName = "ChemistryTable"
+    DisplayName = "Chemistry Table"
+    DisplayDescription = "Better living through chemistry"
+
+    AllowPluginModules = true
+
+    Recipe = {
+        Skill: "GlassworkingSkill",
+        TableObject: "MasonryTableObject",
+        Ingredients: [
+            {Item: "SteelBarItem", Count: 50},
+            {Tag: "MortaredStone", Count: 20},
+            {Tag: "Glass", Count: 30, Skill: "GlassworkingSkill"}
+        ]
+    }
+
+    include "CraftingTable"
+-}}

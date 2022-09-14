@@ -1,0 +1,19 @@
+{{-
+    BaseName = "AlchemyTable"
+    DisplayName = "Alchemy Table"
+    DisplayDescription = "Perform the dark arts on this table"
+
+    AllowPluginModules = true
+
+    Recipe = {
+        Skill: "CarpentrySkill",
+        TableObject: "CarpentryTableObject",
+        Ingredients: [
+            {Item: "PlantFibersItem", Count: 50},
+            {Tag: "MortaredStone", Count: 20},
+            {Tag: "WoodBoard", Count: 30}
+        ]
+    }
+
+    include "CraftingTable"
+-}}

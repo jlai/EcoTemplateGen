@@ -1,0 +1,33 @@
+{{-
+    include "Shared/Eco"
+
+    # Read the Hewn Bench source code from __core__
+    hewnBench = io.load_core_source "AutoGen/WorldObject/HewnBench.cs"
+
+    # Define global variables which will be used by the Recipe template
+    BaseName = "ConcreteBench"
+    DisplayName = "Concrete Table"
+    ItemClassName = "ConcreteBenchItem"
+    DisplayDescription = "A hard concrete bench"
+
+    Recipe = {
+        Skill: "MasonrySkill",
+        TableObject: "MasonryTableObject",
+        Ingredients: [
+            {Tag: "Concrete", Count: 4}
+        ]
+    }
+
+    # Evaluate the recipe class template
+    recipeClass = include "Shared/RecipeClass" recipe: Recipe
+
+    # Apply changes to the Hewn Bench source text
+    concreteBench = hewnBench |
+        string.replace "HewnBench" BaseName |
+        string.replace "Hewn Bench" DisplayName |
+        eco.replace_arrow_value "DisplayDescription" (eco.do_str DisplayDescription) |
+        cs.replace_class "ConcreteBenchRecipe" recipeClass
+
+    # Output
+    concreteBench
+-}}

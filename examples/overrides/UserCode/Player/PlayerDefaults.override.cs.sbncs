@@ -1,0 +1,60 @@
+{{~
+    # Example of override file
+    # Here we read the original source code out of __core__
+    original = io.load_core_source "Player/PlayerDefaults.cs"
+~}}
+{{~ capture newDefaultInventory ~}}
+public static Dictionary<Type, int> GetDefaultInventory()
+{
+    // It's pumpkin time
+    return new Dictionary<Type, int>
+    {
+        { typeof(CarvedPumpkinItem), 3 },
+    };
+}
+{{~ end ~}}
+{{~
+    # Example of replacing simple text strings
+    func replace_max_calories(text, newMaxCalories)
+        ret text | string.replace "new ConstantValue(3000)" ("new ConstantValue(" + newMaxCalories + ")")
+    end
+
+    # Example of replacing using a regex.replace_capture
+    func double_stone_campsite_items(text)
+        $campsite = text | cs.find_node_with_text "method" "GetDefaultCampsiteInventory"
+
+        $newCampsite = $campsite | regex.replace_capture `{ typeof\((?<item>.*?)\), (?<count>\d+) },` do
+            $groups = $0
+            
+            if $groups.item | string.starts_with "Stone"
+                # Replace 'count' with a new value
+                $groups.count = (string.to_int $groups.count) * 2
+            end
+        end
+
+        ret text | string.replace $campsite $newCampsite
+    end
+
+    # Example of replacement using Syntax Nodes for target text
+    func replace_detection_range(text, newRange)
+        # Find a { } initializer containing the text "UserStatType.DetectionRange"
+        $detectionRangeNode = text | cs.find_node_with_text "InitializerExpressionSyntax" "UserStatType.DetectionRange"
+
+        # Replace the value inside the node
+        $updatedNode = $detectionRangeNode | regex.replace `new ConstantValue\(\d+\)` ("new ConstantValue(" + newRange + ")")
+
+        # Replace in the source code
+        ret text | string.replace $detectionRangeNode $updatedNode
+    end
+
+    # Example of replacing a method using cs.replace_method (TODO: currently buggy)
+    func replace_default_inventory(text, replacement)
+        ret text | cs.replace_method "GetDefaultInventory" replacement
+    end
+
+    original |
+        replace_max_calories 5000 |
+        double_stone_campsite_items |
+        replace_default_inventory newDefaultInventory |
+        replace_detection_range 7
+~}}

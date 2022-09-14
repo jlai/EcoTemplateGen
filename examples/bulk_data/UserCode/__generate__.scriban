@@ -1,0 +1,21 @@
+{{-
+    # Example of using YAML and control files to create overrides en masse
+    include "Shared/Eco"
+
+    foodData = io.load_yaml_file "food.yaml"
+
+    for file in (io.list_core_files "AutoGen/Food")
+        code = io.load_core_source file.path
+
+        $name = (code | regex.match `class (?<name>\w+)Item`)[1]
+        $data = foodData[$name]
+
+        if $data
+            # Modify code
+            code = code | eco.replace_arrow_value "Calories" $data.calories
+
+            # Write to .override.cs
+            code | io.write_override_file file.path
+        end
+    end
+-}}

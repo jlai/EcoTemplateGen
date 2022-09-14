@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "EcoTemplateGen.Tool": {
+      "commandName": "Project",
+      "commandLineArgs": "build examples/overrides",
+      "workingDirectory": "$(SolutionDir)",
+      "hotReloadEnabled": true
+    }
+  }
+}

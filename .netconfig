@@ -1,0 +1,3 @@
+[EcoTemplateGen]
+    # You can override this by creating a .netconfig.user file with your Eco install path
+    EcoModsDir = "C:\\Program Files\\Steam\\steamapps\\common\\Eco\\Eco_Data\\Server\\Mods"
