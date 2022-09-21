@@ -1,163 +1,115 @@
 ﻿using CodeChicken.DiffPatch;
-using EcoTemplateGen.ScribanFunctions;
 using Scriban;
-using Scriban.Runtime;
-using static EcoTemplateGen.TemplateSet;
+using Zio;
+using EcoTemplateGen.Extensions;
 
 namespace EcoTemplateGen;
 
 public class EcoTemplateGenerator
 {
-    private readonly string ecoCorePath;
-    private readonly string ecoUserCodePath;
     private readonly EcoTemplateGeneratorOptions options;
-
     private readonly TemplateLoader templateLoader;
-
-    private readonly TemplateSet userCodeTemplates;
-    private readonly TemplateSet projectTemplates;
-    private readonly TemplateSet? sharedTemplates;
-
-    private readonly OutputFileWriter outputFileWriter;
-    private readonly ScriptObject scriptGlobals;
+    private readonly FileSystems fileSystems;
 
     public EcoTemplateGenerator(EcoTemplateGeneratorOptions options)
     {
         this.options = options;
-
-        ecoCorePath = Path.Combine(options.EcoModsDir, "__core__");
-        ecoUserCodePath = Path.Combine(options.EcoModsDir, "UserCode");
-
-        if (!Directory.Exists(ecoCorePath))
-        {
-            throw new ConfigurationException($"Expected Eco mods directory {ecoCorePath} to contain __core__ directory");
-        }
-
-        var projectTemplatesPath = Path.Combine(options.ProjectDir, "Templates");
-        var projectUserCodePath = Path.Combine(options.ProjectDir, "UserCode");
-
-        if (!Directory.Exists(projectUserCodePath))
-        {
-            throw new ConfigurationException($"Expected project directory {projectUserCodePath} to contain UserCode directory");
-        }
-
-        userCodeTemplates = new TemplateSet(projectUserCodePath);
-        projectTemplates = new TemplateSet(projectTemplatesPath) { Name = "Project" };
-
-        var templateSets = new List<TemplateSet>() { userCodeTemplates, projectTemplates };
-
-        if (options.SharedTemplatesDir != null)
-        {
-            var sharedTemplatesDir = Path.GetFullPath(Path.Combine(options.ProjectDir, options.SharedTemplatesDir));
-
-            sharedTemplates = new TemplateSet(sharedTemplatesDir) { Name = "Shared" };
-            templateSets.Add(sharedTemplates);
-        }
-
-        templateLoader = new(templateSets);
-
-        var projectDataPath = Path.Combine(options.ProjectDir, "Data");
-
-        outputFileWriter = new OutputFileWriter(options.OutputDir);
-
-        scriptGlobals = new ScriptObject();
-        scriptGlobals.SetValue("io", new IOFunctions(outputFileWriter, ecoCorePath: ecoCorePath, projectDataPath: projectDataPath), true);
-        scriptGlobals.SetValue("cs", new CSharpFunctions(), true);
+        fileSystems = new FileSystems(options);
+        templateLoader = new TemplateLoader(fileSystems);
     }
 
     public void GenerateMod()
     {
-        foreach (var templateFile in userCodeTemplates.GetAllFiles())
+        foreach (var file in fileSystems.ProjectDirectoryFS.EnumerateAllFileEntries("/UserCode"))
         {
-            GenerateSingleFile(templateFile);
+            GenerateSingleFile(file);
         }
 
         if (options.CopyToEcoMods)
         {
-            Console.WriteLine($"Copying files to {ecoUserCodePath}");
+            Console.WriteLine($"Copying files to {Path.Combine(options.EcoModsDir, "UserCode")}");
         }
 
         // Post processing on generated files
-        foreach (var templateFile in outputFileWriter.GeneratedFiles)
+        if (fileSystems.OutputFS.DirectoryExists("/UserCode"))
         {
-            var outputFilePath = outputFileWriter.GetOutputPath(templateFile);
-
-            if (options.WriteDiffs && templateFile.VirtualPath.EndsWith(".override.cs"))
+            foreach (var outputFile in fileSystems.OutputFS.EnumerateAllFileEntries("/UserCode"))
             {
-                GenerateDiff(templateFile);
-            }
+                if (options.WriteDiffs && PathUtils.IsOverrideFile(outputFile.Path))
+                {
+                    GenerateDiff(outputFile);
+                }
 
-            if (options.CopyToEcoMods)
-            {
-                var ecoCopyOutputPath = GetOutputPath(ecoUserCodePath, templateFile.VirtualPath);
+                if (options.CopyToEcoMods)
+                {
+                    var userCodeOutputFS = fileSystems.EcoUserCodeOutputFS;
 
-                var outputDirectory = Path.GetDirectoryName(ecoCopyOutputPath);
-                if (outputDirectory != null) Directory.CreateDirectory(outputDirectory);
-
-                File.Copy(outputFilePath, ecoCopyOutputPath, true);
+                    userCodeOutputFS.CreateDirectory(outputFile.Directory.Path);
+                    outputFile.FileSystem.CopyFileCross(outputFile.Path, userCodeOutputFS, outputFile.Path, true);
+                }
             }
         }
     }
 
-    public void GenerateDiff(TemplateFile templateFile)
+    public void GenerateDiff(FileEntry outputFile)
     {
-        var outputFilePath = outputFileWriter.GetOutputPath(templateFile);
+        var coreFilePath = PathUtils.GetCorePathFromOverride(outputFile.Path.FullName);
+        var coreFile = fileSystems.EcoCoreFS.GetFileEntry(coreFilePath.ToAbsolute());
 
-        var csFileName = templateFile.VirtualPath.Replace(".override", "");
-        var overrideFileName = templateFile.VirtualPath;
+        var diffs = new LineMatchedDiffer().Diff(outputFile.ReadAllLines(), coreFile.ReadAllLines());
+        var patchFile = new PatchFile()
+        {
+            basePath = $"__core__/{coreFilePath}",
+            patchedPath = outputFile.Path.ToRelative().ToString(),
+            patches = Differ.MakePatches(diffs)
+        };
 
-        var coreFilePath = Path.Combine(ecoCorePath, csFileName);
-        var diff = Differ.DiffFiles(new LineMatchedDiffer(), coreFilePath, outputFilePath);
-        diff.basePath = $"__core__/{csFileName}";
-        diff.patchedPath = $"UserCode/{overrideFileName}";
-
-        var patchFilePath = Path.Combine(outputFilePath.Replace(".override.cs", ".cs.patch"));
-        File.WriteAllText(patchFilePath, diff.ToString());
+        fileSystems.OutputFS.WriteAllText(PathUtils.CreatePatchFilePath(outputFile.FullName), patchFile.ToString());
     }
 
-    internal string ProcessTemplate(TemplateFile file)
+    internal string ProcessTemplate(FileEntry file)
     {
-        using TextReader reader = new StreamReader(file.FileInfo.OpenRead());
-        var templateContext = new CustomTemplateContext()
+        var templateContext = new CustomizedTemplateContext(fileSystems)
         {
             TemplateLoader = templateLoader,
             StrictVariables = true,
         };
 
-        templateContext.PushGlobal(scriptGlobals);
-        templateContext.BuiltinObject.SetValue("regex", new RegexFunctions(), true);
-
-        var fileTemplate = Template.Parse(reader.ReadToEnd(), sourceFilePath: file.VirtualPath);
-        var rendered = fileTemplate.Render(templateContext);
-
-        return rendered;
+        var fileTemplate = Template.Parse(file.ReadAllText(), sourceFilePath: file.Path.ToString());
+        return fileTemplate.Render(templateContext);
     }
 
-    public void GenerateSingleFile(TemplateFile templateFile)
+    public void GenerateSingleFile(FileEntry templateFile)
     {
-        var outputFilePath = outputFileWriter.GetOutputPath(templateFile);
+        var outputFilePath = UPath.Combine("/Output", templateFile.PathWithoutTemplateExtension().ToRelative());
 
-        if (templateFile.Kind == TemplateKind.ASSET)
+        var outputFile = new FileEntry(fileSystems.RootFS, outputFilePath);
+
+        var shouldWrite = false;
+        if (templateFile.HasAssetFileName())
         {
-            Console.WriteLine($"Copying {templateFile.VirtualPath} => {outputFilePath}");
+            Console.WriteLine($"Copying {templateFile.Path} => {outputFilePath}");
 
-            templateFile.FileInfo.CopyTo(outputFilePath, true);
+            templateFile.CopyTo(outputFilePath, true);
             return;
         }
-        else if (templateFile.Kind == TemplateKind.OUTPUT_TEMPLATE)
+
+        if (templateFile.IsScribanControlTemplate())
         {
-            Console.WriteLine($"Generating {templateFile.VirtualPath} => {outputFilePath}");
+            Console.WriteLine($"Executing control template {templateFile.Path}");
         }
-        else if (templateFile.Kind == TemplateKind.CONTROL_TEMPLATE)
+        else if (templateFile.IsScribanTemplate())
         {
-            Console.WriteLine($"Executing control template {templateFile.VirtualPath}");
+            Console.WriteLine($"Generating {templateFile.Path} => {outputFilePath}");
+            shouldWrite = true;
         }
 
         var rendered = ProcessTemplate(templateFile);
 
-        if (templateFile.Kind == TemplateKind.OUTPUT_TEMPLATE)
+        if (shouldWrite)
         {
-            outputFileWriter.WriteTextFile(templateFile, rendered);
+            outputFile.FileSystem.CreateDirectory(outputFile.Directory.Path);
+            outputFile.WriteAllText(rendered);
         }
     }
 }

@@ -2,22 +2,18 @@
 using Scriban;
 using Scriban.Runtime;
 using YamlDotNet.Serialization;
-using static EcoTemplateGen.TemplateSet;
+using Zio;
+using EcoTemplateGen.Extensions;
 
 namespace EcoTemplateGen.ScribanFunctions;
 
 internal class IOFunctions : ScriptObject
 {
-    private readonly OutputFileWriter outputFileWriter;
-    private readonly TemplateSet ecoCoreTemplates;
-    private readonly TemplateSet dataTemplates;
+    private readonly FileSystems fileSystems;
 
-    public IOFunctions(OutputFileWriter outputFileWriter, string ecoCorePath, string projectDataPath)
+    public IOFunctions(FileSystems fileSystems)
     {
-        this.outputFileWriter = outputFileWriter;
-        
-        ecoCoreTemplates = new TemplateSet(ecoCorePath);
-        dataTemplates = new TemplateSet(projectDataPath);
+        this.fileSystems = fileSystems;
 
         // Non-static methods need to be manually registered
         this.Import("list_core_files", ListCoreFiles);
@@ -28,28 +24,20 @@ internal class IOFunctions : ScriptObject
     }
 
     // Loads a file from __core__
-    public string LoadCoreSource(string virtualPath)
+    public string LoadCoreSource(string coreRelativePath)
     {
-        virtualPath = PathUtils.CleanupVirtualPath(virtualPath);
-
-        var templateFile = ecoCoreTemplates.GetTemplateFile(virtualPath);
-
-        if (templateFile == null)
-        {
-            throw new FileNotFoundException($"{virtualPath} not found in Eco __core__ directory");
-        }
-
-        return File.ReadAllText(templateFile.FileInfo.FullName);
+        var file = fileSystems.EcoCoreFS.GetFileEntry(new UPath(coreRelativePath).ToAbsolute());
+        return file.ReadAllText();
     }
 
     public IEnumerable<ScriptObject> ListCoreFiles(string prefix)
     {
-        return ecoCoreTemplates.GetAllFiles().Where(file => file.VirtualPath.StartsWith(prefix)).Select(file =>
+        return fileSystems.EcoCoreFS.EnumerateFileEntries(UPath.Combine("/", prefix)).Select(file =>
         {
             var fileObj = new ScriptObject();
-            fileObj.SetValue("path", file.VirtualPath, true);
-            fileObj.SetValue("name", file.FileInfo.Name, true);
-            fileObj.SetValue("directory", Path.GetDirectoryName(file.VirtualPath)?.Replace("\\", "/"), true);
+            fileObj.SetValue("path", file.Path.ToRelative(), true);
+            fileObj.SetValue("name", file.Name, true);
+            fileObj.SetValue("directory", file.Directory.Path.ToRelative(), true);
 
             return fileObj;
         });
@@ -57,27 +45,28 @@ internal class IOFunctions : ScriptObject
 
     public object? LoadYamlFile(string virtualPath)
     {
-        var templateFile = dataTemplates.GetTemplateFile(virtualPath);
+        UPath path = UPath.Combine(FileSystems.PROJECT_DATA_ROOT_PREFIX, virtualPath);
 
-        if (templateFile == null)
-        {
-            throw new FileNotFoundException($"{virtualPath} not found in project directory");
-        }
-
-        using var reader = new StreamReader(templateFile.FileInfo.FullName);
+        using var stream = fileSystems.RootFS.OpenFile(path, FileMode.Open, FileAccess.Read);
+        using var reader = new StreamReader(stream);
         return new Deserializer().Deserialize(reader);
     }
 
     public void WriteOverrideFile(string text, string sourceVirtualPath)
     {
-        WriteFile(text, sourceVirtualPath.Replace(".cs", ".override.cs"));
+        var overrideFilePath = PathUtils.CreateOverrideFilePath(sourceVirtualPath);
+
+        WriteFile(text, overrideFilePath.ToString());
     }
 
     public void WriteFile(string text, string destVirtualPath)
     {
-        Console.WriteLine($"Writing script-generated file {destVirtualPath}");
+        var outputFile = new FileEntry(fileSystems.RootFS, UPath.Combine(FileSystems.OUTPUT_ROOT_PREFIX, destVirtualPath));
 
-        outputFileWriter.WriteTextFile(destVirtualPath, text);
+        Console.WriteLine($"Writing script-generated file {outputFile.Path}");
+
+        outputFile.CreateParentDirectories();
+        outputFile.WriteAllText(text);
     }
 
     public static string ApplyPatch(string text, string patchFileText)

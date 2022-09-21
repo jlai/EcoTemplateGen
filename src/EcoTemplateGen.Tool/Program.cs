@@ -29,15 +29,22 @@ buildCommand.SetHandler((context) =>
 
     var projectDir = context.ParseResult.GetValueForArgument(projectDirArgument);
 
-    void addOptionConfig<T>(string key, Option<T> option) => configValues.AddOptionalString($"EcoTemplateGen:{key}", context.ParseResult.GetValueForOption(option));
+    void addOptionConfig<T>(string key, Option<T> option, Func<T, string>? transformer = null) {
+        var value = context.ParseResult.GetValueForOption(option);
 
-    addOptionConfig("EcoModsDir", ecoModsDirOption);
-    addOptionConfig("OutputDir", outputDirOption);
-    addOptionConfig("SharedTemplatesDir", sharedTemplatesDirOption);
+        if (value is not null)
+        {
+            configValues.Add($"EcoTemplateGen:{key}", transformer != null ? transformer(value) : value.ToString()!);
+        }
+    };
+
+    addOptionConfig("EcoModsDir", ecoModsDirOption, Path.GetFullPath);
+    addOptionConfig("OutputDir", outputDirOption, Path.GetFullPath);
+    addOptionConfig("SharedTemplatesDir", sharedTemplatesDirOption, Path.GetFullPath);
     addOptionConfig("WriteDiffs", writeDiffsOption);
     addOptionConfig("CopyToEcoMods", copyToEcoModsOption);
 
-    configValues.AddOptionalString("EcoTemplateGen:ProjectDir", projectDir);
+    configValues.Add("EcoTemplateGen:ProjectDir", Path.GetFullPath(projectDir));
 
     var options = BuildConfig(projectDir, configValues).GetValidatedOptions();
 

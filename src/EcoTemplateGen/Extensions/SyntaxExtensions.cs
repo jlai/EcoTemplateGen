@@ -3,8 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace EcoTemplateGen.Extensions;
-
-public static class SyntaxExtensions
+internal static class SyntaxExtensions
 {
     public static NamespaceDeclarationSyntax GetNamespace(this SyntaxNode root)
     {

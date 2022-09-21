@@ -1,64 +1,86 @@
 ﻿using Scriban;
 using Scriban.Parsing;
 using Scriban.Runtime;
+using Scriban.Syntax;
+using System.Text.RegularExpressions;
+using Zio;
 
 namespace EcoTemplateGen;
 
-public class TemplateLoader : ITemplateLoader
+internal class TemplateLoader : ITemplateLoader
 {
-    readonly IDictionary<string, TemplateSet> namedTemplateSets;
-    readonly IEnumerable<TemplateSet> templateSets;
+    public static Regex TEMPLATE_FILENAMES = new Regex(@"\.(sbncs|scriban)$", RegexOptions.Compiled);
+
+    readonly FileSystems fileSystems;
 
     // templateSets should be in order of lookup
-    public TemplateLoader(IEnumerable<TemplateSet> templateSets)
+    public TemplateLoader(FileSystems fileSystems)
     {
-        this.templateSets = templateSets;
-        namedTemplateSets = templateSets.Where(x => x.Name != null).ToDictionary(x => x.Name!, x => x);
+        this.fileSystems = fileSystems;
+    }
+
+    public static bool IsTemplateFile(FileSystemItem item)
+    {
+        return !item.IsDirectory && TEMPLATE_FILENAMES.IsMatch(item.GetName());
     }
 
     public string GetPath(TemplateContext context, SourceSpan callerSpan, string templateName)
     {
-        // Allow resolving using a specific named template set
-        if (templateName.StartsWith("@"))
+        var paths = new UPath[] {
+            UPath.Combine("/Project/Templates/", templateName),
+            UPath.Combine("/Shared/Templates/", templateName)
+        };
+
+        FileEntry? file = TryTemplatePaths(paths);
+
+        if (file is null)
         {
-            var parts = templateName.Split('/', 1);
-
-            var templateSetName = parts.FirstOrDefault()?[1..] ?? "";
-            var templateSet = namedTemplateSets[templateSetName];
-
-            if (templateSet == null)
-            {
-                throw new FileNotFoundException($"template set {templateSetName} not found");
-            }
-
-            var templateFile = templateSet.GetTemplateFile(parts.LastOrDefault() ?? "");
-
-            if (templateFile != null)
-            {
-                return templateFile.FileInfo.FullName;
-            }
+            throw new ScriptRuntimeException(callerSpan, $"could not find template {templateName} in:\n{string.Join("\n", paths)}");
         }
 
-        foreach (var templateSet in templateSets)
-        {
-            var templateFile = templateSet.GetTemplateFile(templateName);
-            if (templateFile != null)
-            {
-                return templateFile.FileInfo.FullName;
-            }
-        }
-
-        Console.WriteLine($"couldn't find {templateName}");
-        throw new FileNotFoundException($"template {templateName} not found");
+        return file.Path.ToString();
     }
 
     public string Load(TemplateContext context, SourceSpan callerSpan, string templatePath)
     {
-        return File.ReadAllText(templatePath);
+        var file = fileSystems.RootFS.GetFileEntry(templatePath);
+
+        return file.ReadAllText();
     }
 
-    public async ValueTask<string> LoadAsync(TemplateContext context, SourceSpan callerSpan, string templatePath)
+    public ValueTask<string> LoadAsync(TemplateContext context, SourceSpan callerSpan, string templatePath)
     {
-        return await File.ReadAllTextAsync(templatePath);
+        // Not actually async
+        return ValueTask.FromResult(Load(context, callerSpan, templatePath));
+    }
+
+    protected FileEntry? TryTemplatePaths(params UPath[] paths)
+    {
+        foreach (var path in paths)
+        {
+            var entry = TryTemplateExtensions(path);
+            if (entry is not null)
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    protected FileEntry? TryTemplateExtensions(UPath path)
+    {
+        FileSystemEntry? fileSystemEntry;
+
+        foreach (var extension in PathUtils.SCRIBAN_EXTENSIONS)
+        {
+            fileSystemEntry = fileSystems.RootFS.TryGetFileSystemEntry($"{path}.{extension}");
+            if (fileSystemEntry is FileEntry fileEntry)
+            {
+                return fileEntry;
+            }
+        }
+
+        return null;
     }
 }

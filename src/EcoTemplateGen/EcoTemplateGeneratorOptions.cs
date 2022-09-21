@@ -10,6 +10,7 @@ public record class EcoTemplateGeneratorConfigOptions
     public bool WriteDiffs { get; set; }
     public bool CopyToEcoMods { get; set; }
 
+    // Validates options and converts paths to absolute
     public EcoTemplateGeneratorOptions GetValidatedOptions()
     {
         if (EcoModsDir == null)
@@ -25,6 +26,17 @@ public record class EcoTemplateGeneratorConfigOptions
         if (OutputDir == null)
         {
             throw new ConfigurationException("no OutputDir configured");
+        }
+
+        // Make ProjectDir absolute
+        ProjectDir = Path.GetFullPath(ProjectDir);
+
+        // Make OutputDir and SharedTemplatesDir relative to project path (if not absolute)
+        OutputDir = Path.GetFullPath(Path.Combine(ProjectDir, OutputDir));
+
+        if (SharedTemplatesDir != null)
+        {
+            SharedTemplatesDir = Path.GetFullPath(Path.Combine(ProjectDir, SharedTemplatesDir));
         }
 
         return new EcoTemplateGeneratorOptions(EcoModsDir, ProjectDir, OutputDir)
